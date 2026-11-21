@@ -20,15 +20,15 @@ async def create_employee_endpoint(
     employee_data: EmployeeCreate,
     background_tasks: BackgroundTasks,
     db: Annotated[AsyncSession, Depends(get_db)],
-    current_user: Annotated[
-        User,
-        Depends(require_role("super_admin", "manager"))
-    ],
+    # current_user: Annotated[
+    #     User,
+    #     Depends(require_role("super_admin", "manager"))
+    # ],
 ):
     employee, activation_code = await create_employee(
         db=db,
         employee_data=employee_data,
-        current_user=current_user,
+        # current_user=current_user,
     )
     if employee.email:
         background_tasks.add_task(

@@ -18,7 +18,7 @@ from app.core.security import (
 async def create_employee(
     db: AsyncSession,
     employee_data: EmployeeCreate,
-    current_user: User,
+    # current_user: User,
 ):
     # STEP 1: Check employee ID
     result = await db.execute(
@@ -87,7 +87,7 @@ async def create_employee(
         phone_number=employee_data.phone_number,
         hourly_rate=employee_data.hourly_rate,
         site_id=employee_data.site_id,
-        role="employee",
+        role="manager",
         status="invited",
         password_hash=None,
         activation_code_hash=activation_code_hash,
