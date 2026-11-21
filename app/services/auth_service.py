@@ -295,27 +295,98 @@ async def logout(
 
 
 
+# async def forgot_password(
+#     db: AsyncSession,
+#     email: str,
+# ):
+#     email = email.strip().lower()
+
+#     result = await db.execute(
+#         select(User).where(
+#             User.email == email,
+#             User.status == "active",
+#         )
+#     )
+
+#     user = result.scalar_one_or_none()
+
+#     if user is None:
+#         return None
+
+#     now = datetime.now(UTC)
+
+#     # Invalidate previous unused reset requests
+#     await db.execute(
+#         update(PasswordResetCode)
+#         .where(
+#             PasswordResetCode.user_id == user.id,
+#             PasswordResetCode.used_at.is_(None),
+#         )
+#         .values(used_at=now)
+#     )
+
+#     # Generate and hash the code
+#     code = generate_activated_code()
+#     code_hash = hash_activated_code(code)
+
+#     reset_code = PasswordResetCode(
+#         user_id=user.id,
+#         code_hash=code_hash,
+#         expires_at=now + timedelta(minutes=10),
+#     )
+
+#     db.add(reset_code)
+
+#     await db.commit()
+
+#     return {
+#         "email": user.email,
+#         "code": code,
+#     }
+
+
 async def forgot_password(
     db: AsyncSession,
     email: str,
 ):
     email = email.strip().lower()
+    now = datetime.now(UTC)
 
+    # 1. Find and lock the active user
     result = await db.execute(
-        select(User).where(
+        select(User)
+        .where(
             User.email == email,
             User.status == "active",
         )
+        .with_for_update()
     )
-
     user = result.scalar_one_or_none()
 
     if user is None:
+        await db.rollback()
         return None
 
-    now = datetime.now(UTC)
+    # 2. Get the latest password reset request
+    result = await db.execute(
+        select(PasswordResetCode)
+        .where(PasswordResetCode.user_id == user.id)
+        .order_by(desc(PasswordResetCode.created_at))
+        .limit(1)
+    )
+    last_reset = result.scalar_one_or_none()
 
-    # Invalidate previous unused reset requests
+    # 3. Check cooldown (1 minute)
+    if last_reset is not None:
+        next_request_time = (
+            last_reset.created_at + timedelta(minutes=1)
+        )
+
+        if now < next_request_time:
+            await db.rollback()  # Release the user lock
+            return None
+
+    # 4. Invalidate previous unused reset requests
     await db.execute(
         update(PasswordResetCode)
         .where(
@@ -325,10 +396,11 @@ async def forgot_password(
         .values(used_at=now)
     )
 
-    # Generate and hash the code
+    # 5. Generate and hash new code
     code = generate_activated_code()
     code_hash = hash_activated_code(code)
 
+    # 6. Create new reset request
     reset_code = PasswordResetCode(
         user_id=user.id,
         code_hash=code_hash,
@@ -336,13 +408,14 @@ async def forgot_password(
     )
 
     db.add(reset_code)
-
     await db.commit()
 
+    # 7. Return email and raw code for notification
     return {
         "email": user.email,
         "code": code,
     }
+
 
 
 
